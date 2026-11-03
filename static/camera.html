@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Monovia · Câmera</title>
+<style>
+  :root { --bg:#0e1116; --pn:#171b22; --tx:#e8ebf0; --mu:#8b93a1; --ok:#2fbf71; --al:#f2b233; --er:#ef5350; --ac:#3d8bfd; }
+  * { box-sizing:border-box; }
+  html,body { margin:0; height:100%; background:var(--bg); color:var(--tx); font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
+  #wrap { position:relative; width:100%; height:100%; display:flex; flex-direction:column; }
+  #tela { flex:1; min-height:0; display:flex; align-items:center; justify-content:center; overflow:hidden; background:#000; }
+  canvas#vis { max-width:100%; max-height:100%; touch-action:none; }
+  #barra { background:var(--pn); padding:10px 12px calc(10px + env(safe-area-inset-bottom)); display:grid; gap:8px; }
+  #nums { display:grid; grid-template-columns:repeat(4,1fr); gap:6px; text-align:center; }
+  .n b { display:block; font-size:20px; font-variant-numeric:tabular-nums; }
+  .n span { font-size:11px; color:var(--mu); text-transform:uppercase; letter-spacing:.04em; }
+  #msg { font-size:14px; height:40px; overflow:hidden; line-height:20px; }   /* altura fixa: a imagem não pula durante a calibração */
+  #bts { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; }
+  button { font:inherit; font-size:15px; padding:12px 6px; border:0; border-radius:10px; background:#262c36; color:var(--tx); }
+  button.pri { background:var(--ac); color:#fff; }
+  button:disabled { opacity:.4; }
+  .dot { display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:6px; background:var(--er); vertical-align:middle; }
+  .dot.on { background:var(--ok); }
+  video { display:none; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="tela"><canvas id="vis" width="360" height="640"></canvas></div>
+  <div id="barra">
+    <div id="nums">
+      <div class="n"><b id="nPecas">–</b><span>peças hoje</span></div>
+      <div class="n"><b id="nGanchos">–</b><span>ganchos</span></div>
+      <div class="n"><b id="nVel">–</b><span>m/s</span></div>
+      <div class="n"><b id="nEst">–</b><span>monovia</span></div>
+    </div>
+    <div id="msg"><span class="dot" id="dot"></span><span id="txt">Toque em "Iniciar" para ligar a câmera.</span></div>
+    <div id="bts">
+      <button class="pri" id="bIni">Iniciar</button>
+      <button id="bCal" disabled>Calibrar</button>
+      <button id="bFun" disabled>Gravar fundo</button>
+    </div>
+  </div>
+</div>
+<video id="vid" playsinline muted autoplay></video>
+<script>
+const $ = id => document.getElementById(id);
+const vid = $('vid'), vis = $('vis'), cx = vis.getContext('2d');
+const tira = document.createElement('canvas'), tx = tira.getContext('2d', { willReadFrequently: true });
+const movc = document.createElement('canvas'), mx = movc.getContext('2d', { willReadFrequently: true });
+let cfg = {}, ws = null, W = 0, H = 0, calib = null, enviados = 0, ultEnvio = 0, movAtual = -1, movBuf = [], ultMov = 0, srv = {};
+const FPS_ENVIO = 15;
+
+function msg(t, cor) { $('txt').textContent = t; $('txt').style.color = cor || ''; }
+async function api(c, corpo) {
+  const r = await fetch(c, corpo ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(corpo) } : {});
+  if (r.status === 401) { location.href = '/entrar?prox=/camera'; throw new Error('401'); }
+  return r.json();
+}
+
+async function iniciar() {
+  try {
+    const st = await navigator.mediaDevices.getUserMedia({ audio: false,
+      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } } });
+    vid.srcObject = st; await vid.play();
+  } catch (e) { msg('Não consegui abrir a câmera: ' + e.message, 'var(--er)'); return; }
+  W = vid.videoWidth; H = vid.videoHeight;
+  try { await navigator.wakeLock.request('screen'); } catch (e) {}
+  cfg = await api('/api/config');
+  $('bIni').disabled = true; $('bCal').disabled = false;
+  if (cfg.x == null) msg('Toque em "Calibrar" e marque a linha.', 'var(--al)');
+  else if (cfg.w !== W || cfg.h !== H) msg(`A câmera agora está em ${W}x${H} (calibrado em ${cfg.w}x${cfg.h}). Calibre de novo.`, 'var(--al)');
+  conectar(); requestAnimationFrame(desenhar);
+}
+
+function conectar() {
+  const u = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws/camera';
+  ws = new WebSocket(u); ws.binaryType = 'arraybuffer';
+  ws.onopen = () => { $('dot').classList.add('on'); };
+  ws.onclose = ev => { $('dot').classList.remove('on'); if (ev.code === 4001) { location.href = '/entrar?prox=/camera'; return; } setTimeout(conectar, 3000); };
+  ws.onmessage = ev => { srv = JSON.parse(ev.data); mostrar(); };
+}
+
+function mostrar() {
+  $('nPecas').textContent = srv.pecas ?? '–';
+  $('nGanchos').textContent = srv.ganchos ?? '–';
+  $('nVel').textContent = srv.vel != null ? srv.vel.toFixed(3) : '–';
+  $('nEst').textContent = srv.parada ? 'PARADA' : 'andando';
+  $('nEst').style.color = srv.parada ? 'var(--er)' : 'var(--ok)';
+  $('bFun').disabled = cfg.x == null || srv.gravando_fundo;
+  if (calib) return;
+  if (cfg.x == null) return;
+  if (srv.gravando_fundo) msg('Gravando o fundo… não mexa no celular (3 s).', 'var(--al)');
+  else if (!srv.fundo_ok) msg('Espere um gancho VAZIO na linha vermelha e toque "Gravar fundo".', 'var(--al)');
+  else if (srv.mexeu >= 3) msg(`A câmera mexeu ${srv.mexeu} px. Prenda o celular e, com gancho vazio na linha, toque "Gravar fundo".`, 'var(--al)');
+  else msg(`Contando · ${srv.fps} quadros/s enviados`, 'var(--mu)');
+}
+
+// ---------- calibração: 3 toques ----------
+const PASSOS = ['Toque no TOPO da peça mais alta, logo ABAIXO da gancheira (onde passa a linha)', 'Toque na BASE da peça mais baixa', 'Toque no TRILHO, onde o trole passa'];
+$('bCal').onclick = () => { calib = []; msg(PASSOS[0], 'var(--al)'); };
+vis.addEventListener('pointerdown', async e => {
+  if (!calib) return;
+  const r = vis.getBoundingClientRect();
+  const x = Math.round((e.clientX - r.left) / r.width * W), y = Math.round((e.clientY - r.top) / r.height * H);
+  calib.push([x, y]);
+  if (calib.length < 3) { msg(PASSOS[calib.length], 'var(--al)'); return; }
+  const [[x1, ya], [, yb], [, yr]] = calib; calib = null;
+  cfg = await api('/api/config', { x: x1, y0: Math.min(ya, yb), y1: Math.max(ya, yb), ry: yr, w: W, h: H });
+  msg('Calibrado! Agora espere um gancho VAZIO na linha e toque "Gravar fundo".', 'var(--ok)');
+  $('bFun').disabled = false;
+});
+$('bFun').onclick = () => { if (ws && ws.readyState === 1) { ws.send(JSON.stringify({ tipo: 'fundo' })); srv.gravando_fundo = true; mostrar(); } };
+$('bIni').onclick = iniciar;
+
+// ---------- laço: desenha e manda a linha de pixels ----------
+function desenhar() {
+  requestAnimationFrame(desenhar);
+  if (!W) return;
+  const esc = Math.min(vis.parentElement.clientWidth / W, vis.parentElement.clientHeight / H);
+  const cw = Math.round(W * esc), ch = Math.round(H * esc);
+  if (vis.width !== cw || vis.height !== ch) { vis.width = cw; vis.height = ch; }
+  cx.drawImage(vid, 0, 0, cw, ch);
+  if (cfg.x != null) {
+    cx.strokeStyle = '#ff3b30'; cx.lineWidth = 3; cx.beginPath();
+    cx.moveTo(cfg.x * esc, cfg.y0 * esc); cx.lineTo(cfg.x * esc, cfg.y1 * esc); cx.stroke();
+    cx.strokeStyle = '#ff2dd4'; cx.beginPath(); cx.arc(cfg.x * esc, cfg.ry * esc, 8, 0, 7); cx.stroke();
+  }
+  if (calib) {
+    cx.fillStyle = '#ffd60a';
+    for (const [x, y] of calib) { cx.beginPath(); cx.arc(x * esc, y * esc, 6, 0, 7); cx.fill(); }
+  }
+  const agora = performance.now();
+  if (cfg.x == null || cfg.ya == null || !ws || ws.readyState !== 1 || agora - ultEnvio < 1000 / FPS_ENVIO - 4) return;
+  if (cfg.w !== W || cfg.h !== H) return;
+  ultEnvio = agora;
+  medirMovimento(agora);
+  const ya = cfg.ya, n = Math.min(cfg.yb, H) - ya, x0 = Math.max(0, cfg.x - 3);
+  if (tira.width !== 6 || tira.height !== n) { tira.width = 6; tira.height = n; }
+  tx.drawImage(vid, x0, ya, 6, n, 0, 0, 6, n);
+  const px = tx.getImageData(0, 0, 6, n).data;
+  const buf = new ArrayBuffer(16 + n * 3), dv = new DataView(buf), out = new Uint8Array(buf, 16);
+  dv.setFloat64(0, performance.timeOrigin + agora, true); dv.setFloat32(8, movAtual, true);
+  dv.setUint16(12, ya, true); dv.setUint16(14, n, true);
+  for (let y = 0; y < n; y++) for (let c = 0; c < 3; c++) {
+    let s = 0; for (let i = 0; i < 6; i++) s += px[(y * 6 + i) * 4 + c];
+    out[y * 3 + c] = Math.round(s / 6);
+  }
+  ws.send(buf); enviados++;
+}
+
+// movimento perto da linha (2x por segundo, compara com 1 s antes) -> parada / funcionando
+function medirMovimento(agora) {
+  if (agora - ultMov < 500) { return; }
+  ultMov = agora;
+  const xa = Math.max(0, cfg.x - (W >> 2)), xb = Math.min(W, cfg.x + (W >> 2));
+  const ya = Math.max(0, Math.min(cfg.ry, cfg.y0) - 20), yb = Math.min(H, cfg.y1 + 20);
+  const w = 180, h = Math.max(20, Math.round(180 * (yb - ya) / (xb - xa)));
+  if (movc.width !== w || movc.height !== h) { movc.width = w; movc.height = h; movBuf = []; }
+  mx.drawImage(vid, xa, ya, xb - xa, yb - ya, 0, 0, w, h);
+  const d = mx.getImageData(0, 0, w, h).data, g = new Uint8Array(w * h);
+  for (let i = 0; i < w * h; i++) g[i] = (d[i * 4] * 77 + d[i * 4 + 1] * 150 + d[i * 4 + 2] * 29) >> 8;
+  movBuf.push(g); if (movBuf.length > 3) movBuf.shift();
+  if (movBuf.length === 3) {
+    const a = movBuf[0]; let c = 0;
+    for (let i = 0; i < g.length; i++) if (Math.abs(g[i] - a[i]) > 12) c++;
+    movAtual = c / g.length;
+  }
+}
+document.addEventListener('visibilitychange', async () => {
+  if (document.visibilityState === 'visible') { try { await navigator.wakeLock.request('screen'); } catch (e) {} }
+});
+</script>
+</body>
+</html>

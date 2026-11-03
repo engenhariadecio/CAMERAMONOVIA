@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Monovia · Entrar</title>
+<style>
+  :root { --bg:#f4f5f7; --pn:#fff; --bd:#e3e6ea; --tx:#1b1f24; --mu:#69717d; --er:#d64541; --ac:#2f6fdb; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0f1216; --pn:#171b21; --bd:#262c35; --tx:#e7eaee; --mu:#8d96a3; } }
+  * { box-sizing:border-box; }
+  body { margin:0; min-height:100vh; display:grid; place-items:center; background:var(--bg); color:var(--tx);
+         font:16px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; padding:16px; }
+  form { width:100%; max-width:340px; background:var(--pn); border:1px solid var(--bd); border-radius:14px; padding:24px; display:grid; gap:14px; }
+  h1 { font-size:20px; margin:0; }
+  p { margin:0; color:var(--mu); font-size:14px; }
+  label { display:grid; gap:6px; font-size:14px; color:var(--mu); }
+  input { font:inherit; font-size:17px; padding:12px; border:1px solid var(--bd); border-radius:10px; background:var(--bg); color:var(--tx); }
+  button { font:inherit; font-size:17px; padding:13px; border:0; border-radius:10px; background:var(--ac); color:#fff; }
+  #erro { color:var(--er); font-size:14px; min-height:18px; }
+</style>
+</head>
+<body>
+<form id="f">
+  <h1>Monovia · Visão</h1>
+  <p>Entre com seu usuário e senha.</p>
+  <label>Usuário<input id="u" autocomplete="username" autocapitalize="none" autocorrect="off" required></label>
+  <label>Senha<input id="s" type="password" autocomplete="current-password" required></label>
+  <button>Entrar</button>
+  <div id="erro"></div>
+</form>
+<script>
+const prox = new URLSearchParams(location.search).get('prox') || '/';
+document.getElementById('f').onsubmit = async e => {
+  e.preventDefault();
+  const r = await fetch('/api/entrar', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ usuario: document.getElementById('u').value, senha: document.getElementById('s').value }) });
+  if (r.ok) location.href = prox.startsWith('/') && !prox.startsWith('//') ? prox : '/';
+  else document.getElementById('erro').textContent = (await r.json()).detail || 'Não foi possível entrar.';
+};
+</script>
+</body>
+</html>
