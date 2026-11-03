@@ -53,6 +53,28 @@ As tabelas `monovia_*` são criadas sozinhas e não mexem nas tabelas do Banho e
 
 Consumo de internet: cerca de 60 MB por hora. Prefira Wi-Fi.
 
+## 2b. Usar a câmera do PC (webcam USB) em vez do celular
+
+1. **Instale a webcam presa num suporte fixo**, de frente para a monovia, e ligue no PC.
+2. **No PC, abra `https://SEU-DOMINIO/camera` no Chrome ou no Edge** e faça o login.
+3. **Clique em Iniciar.** Em **Câmera → Qual câmera**, escolha a webcam da monovia; o PC lembra a escolha. Deixe a resolução em **1280 × 720**.
+4. **Se aparecer "Travar foco e exposição", marque.** Assim a imagem não muda de brilho sozinha.
+5. **Clique em Calibrar** e faça os 3 cliques na imagem (topo da peça mais alta, base da peça mais baixa, trilho). Uma lupa mostra o ponto aumentado 3×.
+6. **Faça o ajuste fino, se precisar**, em **Ajuste fino da calibração**:
+   - arraste as bolinhas e a linha na imagem;
+   - ou use as setas do teclado com o mouse sobre a imagem (1 px; com Shift, 10 px);
+   - ou digite os números.
+   
+   Depois clique em **Salvar calibração**.
+7. **Com um gancho vazio na linha, clique em Gravar fundo.**
+8. **Confira a linha de pixels.** O quadro **Linha de pixels** mostra o que a contagem enxerga: cada gancho vira um bloco, e o espaço entre as peças vira uma faixa.
+
+No Chrome e no Edge a contagem **continua com a janela minimizada**. Para não parar:
+- no Windows, desligue a suspensão do PC (**Configurações → Energia → Suspender: Nunca**);
+- no navegador, adicione o site em **Configurações → Desempenho → Sempre manter estes sites ativos**.
+
+Na próxima vez que abrir a página, a câmera liga sozinha.
+
 ## 3. Painel
 
 Endereço: `https://SEU-DOMINIO/`, com o mesmo login.

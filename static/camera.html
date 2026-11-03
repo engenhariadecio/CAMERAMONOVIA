@@ -5,52 +5,109 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Monovia · Câmera</title>
 <style>
-  :root { --bg:#0e1116; --pn:#171b22; --tx:#e8ebf0; --mu:#8b93a1; --ok:#2fbf71; --al:#f2b233; --er:#ef5350; --ac:#3d8bfd; }
+  :root { --bg:#0e1116; --pn:#171b22; --pn2:#1f242d; --bd:#2a303b; --tx:#e8ebf0; --mu:#8b93a1; --ok:#2fbf71; --al:#f2b233; --er:#ef5350; --ac:#3d8bfd; }
   * { box-sizing:border-box; }
   html,body { margin:0; height:100%; background:var(--bg); color:var(--tx); font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
-  #wrap { position:relative; width:100%; height:100%; display:flex; flex-direction:column; }
-  #tela { flex:1; min-height:0; display:flex; align-items:center; justify-content:center; overflow:hidden; background:#000; }
-  canvas#vis { max-width:100%; max-height:100%; touch-action:none; }
-  #barra { background:var(--pn); padding:10px 12px calc(10px + env(safe-area-inset-bottom)); display:grid; gap:8px; }
+  #wrap { height:100%; display:grid; grid-template-rows:58vh 1fr; }
+  @media (min-width: 900px) { #wrap { grid-template-rows:none; grid-template-columns:1fr 370px; } }
+  #tela { position:relative; min-height:0; display:flex; align-items:center; justify-content:center; overflow:hidden; background:#000; }
+  canvas#vis { max-width:100%; max-height:100%; touch-action:none; cursor:default; }
+  canvas#vis.mira { cursor:crosshair; }
+  canvas#vis.arrasta { cursor:grab; }
+  #lupa { position:absolute; left:10px; top:10px; width:170px; height:170px; border:2px solid #ffd60a; border-radius:8px; background:#000; display:none; pointer-events:none; }
+  #lado { background:var(--pn); overflow-y:auto; padding:12px 12px calc(12px + env(safe-area-inset-bottom)); display:grid; gap:10px; align-content:start; }
   #nums { display:grid; grid-template-columns:repeat(4,1fr); gap:6px; text-align:center; }
   .n b { display:block; font-size:20px; font-variant-numeric:tabular-nums; }
   .n span { font-size:11px; color:var(--mu); text-transform:uppercase; letter-spacing:.04em; }
-  #msg { font-size:14px; height:40px; overflow:hidden; line-height:20px; }   /* altura fixa: a imagem não pula durante a calibração */
-  #bts { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; }
-  button { font:inherit; font-size:15px; padding:12px 6px; border:0; border-radius:10px; background:#262c36; color:var(--tx); }
+  #msg { font-size:14px; min-height:40px; line-height:20px; }
+  .bts { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; }
+  button, select, input { font:inherit; font-size:15px; border-radius:10px; color:var(--tx); }
+  button { padding:11px 6px; border:0; background:#262c36; cursor:pointer; }
   button.pri { background:var(--ac); color:#fff; }
-  button:disabled { opacity:.4; }
+  button:disabled { opacity:.4; cursor:default; }
+  select, input { width:100%; padding:8px; background:var(--pn2); border:1px solid var(--bd); }
+  details { background:var(--pn2); border:1px solid var(--bd); border-radius:12px; padding:8px 10px; }
+  details[open] { padding-bottom:10px; }
+  summary { cursor:pointer; font-size:14px; font-weight:600; padding:2px 0; }
+  .campos { display:grid; grid-template-columns:repeat(4,1fr); gap:6px; margin-top:8px; }
+  .campos label, .linha label { font-size:12px; color:var(--mu); display:grid; gap:3px; }
+  .linha { display:grid; gap:8px; margin-top:8px; }
+  .dica { font-size:12px; color:var(--mu); margin:6px 0 0; line-height:1.4; }
+  .linha label.chk { display:flex; gap:8px; align-items:center; font-size:14px; color:var(--tx); }
+  .chk input { width:auto; }
+  #fita { width:100%; height:130px; background:#000; border-radius:8px; image-rendering:pixelated; display:block; margin-top:8px; }
   .dot { display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:6px; background:var(--er); vertical-align:middle; }
   .dot.on { background:var(--ok); }
   video { display:none; }
+  a { color:var(--ac); font-size:13px; }
 </style>
 </head>
 <body>
 <div id="wrap">
-  <div id="tela"><canvas id="vis" width="360" height="640"></canvas></div>
-  <div id="barra">
+  <div id="tela"><canvas id="vis" width="640" height="360"></canvas><canvas id="lupa" width="170" height="170"></canvas></div>
+  <div id="lado">
     <div id="nums">
       <div class="n"><b id="nPecas">–</b><span>peças hoje</span></div>
       <div class="n"><b id="nGanchos">–</b><span>ganchos</span></div>
       <div class="n"><b id="nVel">–</b><span>m/s</span></div>
       <div class="n"><b id="nEst">–</b><span>monovia</span></div>
     </div>
-    <div id="msg"><span class="dot" id="dot"></span><span id="txt">Toque em "Iniciar" para ligar a câmera.</span></div>
-    <div id="bts">
+    <div id="msg"><span class="dot" id="dot"></span><span id="txt">Clique em "Iniciar" para ligar a câmera.</span></div>
+    <div class="bts">
       <button class="pri" id="bIni">Iniciar</button>
       <button id="bCal" disabled>Calibrar</button>
       <button id="bFun" disabled>Gravar fundo</button>
     </div>
+
+    <details id="dCam" open>
+      <summary>Câmera</summary>
+      <div class="linha">
+        <label>Qual câmera<select id="sCam"><option value="">padrão</option></select></label>
+        <label>Resolução<select id="sRes">
+          <option value="1280x720">1280 × 720 (recomendado)</option>
+          <option value="1920x1080">1920 × 1080</option>
+          <option value="640x480">640 × 480</option>
+        </select></label>
+        <label class="chk" id="lTrava" hidden><input type="checkbox" id="cTrava"> Travar foco e exposição (evita a imagem "respirar")</label>
+      </div>
+    </details>
+
+    <details id="dCal">
+      <summary>Ajuste fino da calibração</summary>
+      <div class="campos">
+        <label>Linha (x)<input id="eX" type="number" step="1"></label>
+        <label>Topo<input id="eY0" type="number" step="1"></label>
+        <label>Base<input id="eY1" type="number" step="1"></label>
+        <label>Trilho<input id="eRy" type="number" step="1"></label>
+      </div>
+      <p class="dica">Arraste na imagem: a <b>bolinha amarela de cima</b> (topo), a <b>de baixo</b> (base), a <b>rosa</b> (trilho) ou a <b>linha vermelha</b> (muda de lugar). Com o mouse sobre a imagem, as setas do teclado movem o último ponto escolhido 1 px (com Shift, 10 px).</p>
+      <div class="bts" style="grid-template-columns:1fr 1fr; margin-top:8px">
+        <button id="bDesf" disabled>Desfazer</button>
+        <button class="pri" id="bSalv" disabled>Salvar calibração</button>
+      </div>
+    </details>
+
+    <details id="dFita" open>
+      <summary>Linha de pixels (últimos ~20 s)</summary>
+      <canvas id="fita" width="300" height="150"></canvas>
+      <p class="dica">É o que a contagem enxerga: cada gancho que passa vira um bloco, e o espaço entre as peças vira uma faixa. As marcas na lateral mostram o topo, a base e o trilho.</p>
+    </details>
+
+    <a href="/">Abrir o painel</a>
   </div>
 </div>
 <video id="vid" playsinline muted autoplay></video>
 <script>
 const $ = id => document.getElementById(id);
-const vid = $('vid'), vis = $('vis'), cx = vis.getContext('2d');
+const vid = $('vid'), vis = $('vis'), cx = vis.getContext('2d'), lupa = $('lupa'), lx = lupa.getContext('2d');
 const tira = document.createElement('canvas'), tx = tira.getContext('2d', { willReadFrequently: true });
 const movc = document.createElement('canvas'), mx = movc.getContext('2d', { willReadFrequently: true });
-let cfg = {}, ws = null, W = 0, H = 0, calib = null, enviados = 0, ultEnvio = 0, movAtual = -1, movBuf = [], ultMov = 0, srv = {};
+const fita = $('fita'), fx = fita.getContext('2d'), col1 = document.createElement('canvas'), c1x = col1.getContext('2d');
+let cfg = {}, ed = null, sel = 'y0', arrastando = null, mouse = null;
+let ws = null, W = 0, H = 0, calib = null, ultEnvio = 0, movAtual = -1, movBuf = [], ultMov = 0, srv = {}, track = null, leitor = null, clone = null;
 const FPS_ENVIO = 15;
+const guardar = (k, v) => { try { localStorage.setItem('monovia_' + k, v); } catch (e) {} };
+const ler = k => { try { return localStorage.getItem('monovia_' + k); } catch (e) { return null; } };
 
 function msg(t, cor) { $('txt').textContent = t; $('txt').style.color = cor || ''; }
 async function api(c, corpo) {
@@ -59,25 +116,75 @@ async function api(c, corpo) {
   return r.json();
 }
 
-async function iniciar() {
-  try {
-    const st = await navigator.mediaDevices.getUserMedia({ audio: false,
-      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } } });
-    vid.srcObject = st; await vid.play();
-  } catch (e) { msg('Não consegui abrir a câmera: ' + e.message, 'var(--er)'); return; }
+// ---------------- câmera ----------------
+async function listarCameras() {
+  const devs = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'videoinput');
+  const atual = track && track.getSettings().deviceId;
+  $('sCam').innerHTML = devs.map((d, i) => `<option value="${d.deviceId}">${d.label || 'Câmera ' + (i + 1)}</option>`).join('') || '<option value="">padrão</option>';
+  if (atual) $('sCam').value = atual;
+}
+
+async function abrirCamera() {
+  if (track) { track.stop(); track = null; }
+  if (leitor) { try { leitor.cancel(); } catch (e) {} leitor = null; }
+  if (clone) { clone.stop(); clone = null; }
+  const [rw, rh] = ($('sRes').value || '1280x720').split('x').map(Number);
+  const id = $('sCam').value || ler('cam');
+  const v = { width: { ideal: rw }, height: { ideal: rh }, frameRate: { ideal: 30 } };
+  if (id) v.deviceId = { exact: id }; else v.facingMode = { ideal: 'environment' };
+  let st;
+  try { st = await navigator.mediaDevices.getUserMedia({ audio: false, video: v }); }
+  catch (e) {
+    if (id) { guardar('cam', ''); $('sCam').value = ''; return abrirCamera(); }   // câmera guardada sumiu: usa a padrão
+    msg('Não consegui abrir a câmera: ' + e.message, 'var(--er)'); return false;
+  }
+  vid.srcObject = st; await vid.play();
+  track = st.getVideoTracks()[0];
   W = vid.videoWidth; H = vid.videoHeight;
+  guardar('cam', track.getSettings().deviceId || '');
+  await listarCameras();
+  // travar foco/exposição, quando a câmera deixa
+  const cap = track.getCapabilities ? track.getCapabilities() : {};
+  const pode = (cap.focusMode || []).includes('manual') || (cap.exposureMode || []).includes('manual');
+  $('lTrava').hidden = !pode;
+  if (pode && ler('trava') === '1') { $('cTrava').checked = true; travar(true); }
+  iniciarLeitor();
+  return true;
+}
+
+async function travar(sim) {
+  if (!track) return;
+  const cap = track.getCapabilities ? track.getCapabilities() : {}, adv = [];
+  if ((cap.focusMode || []).length) adv.push({ focusMode: sim && cap.focusMode.includes('manual') ? 'manual' : 'continuous' });
+  if ((cap.exposureMode || []).length) adv.push({ exposureMode: sim && cap.exposureMode.includes('manual') ? 'manual' : 'continuous' });
+  if ((cap.whiteBalanceMode || []).length) adv.push({ whiteBalanceMode: sim && cap.whiteBalanceMode.includes('manual') ? 'manual' : 'continuous' });
+  try { await track.applyConstraints({ advanced: adv }); } catch (e) {}
+  guardar('trava', sim ? '1' : '0');
+}
+
+$('sCam').onchange = async () => { guardar('cam', $('sCam').value); if (await abrirCamera()) avisoResolucao(); };
+$('sRes').onchange = async () => { guardar('res', $('sRes').value); if (await abrirCamera()) avisoResolucao(); };
+$('cTrava').onchange = () => travar($('cTrava').checked);
+if (ler('res')) $('sRes').value = ler('res');
+
+async function iniciar() {
+  if (!(await abrirCamera())) return;
   try { await navigator.wakeLock.request('screen'); } catch (e) {}
-  cfg = await api('/api/config');
-  $('bIni').disabled = true; $('bCal').disabled = false;
-  if (cfg.x == null) msg('Toque em "Calibrar" e marque a linha.', 'var(--al)');
-  else if (cfg.w !== W || cfg.h !== H) msg(`A câmera agora está em ${W}x${H} (calibrado em ${cfg.w}x${cfg.h}). Calibre de novo.`, 'var(--al)');
-  conectar(); requestAnimationFrame(desenhar);
+  cfg = await api('/api/config'); copiarParaEdicao();
+  $('bIni').textContent = 'Reiniciar'; $('bCal').disabled = false;
+  avisoResolucao();
+  if (!ws) conectar();
+}
+
+function avisoResolucao() {
+  if (cfg.x == null) msg('Clique em "Calibrar" e marque a linha na imagem.', 'var(--al)');
+  else if (cfg.w !== W || cfg.h !== H) msg(`A câmera está em ${W}x${H}, mas foi calibrada em ${cfg.w}x${cfg.h}. Escolha ${cfg.w}x${cfg.h} em "Resolução" ou calibre de novo.`, 'var(--al)');
 }
 
 function conectar() {
   const u = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws/camera';
   ws = new WebSocket(u); ws.binaryType = 'arraybuffer';
-  ws.onopen = () => { $('dot').classList.add('on'); };
+  ws.onopen = () => $('dot').classList.add('on');
   ws.onclose = ev => { $('dot').classList.remove('on'); if (ev.code === 4001) { location.href = '/entrar?prox=/camera'; return; } setTimeout(conectar, 3000); };
   ws.onmessage = ev => { srv = JSON.parse(ev.data); mostrar(); };
 }
@@ -88,57 +195,149 @@ function mostrar() {
   $('nVel').textContent = srv.vel != null ? srv.vel.toFixed(3) : '–';
   $('nEst').textContent = srv.parada ? 'PARADA' : 'andando';
   $('nEst').style.color = srv.parada ? 'var(--er)' : 'var(--ok)';
-  $('bFun').disabled = cfg.x == null || srv.gravando_fundo;
-  if (calib) return;
+  $('bFun').disabled = cfg.x == null || srv.gravando_fundo || sujo();
+  if (calib || arrastando) return;
   if (cfg.x == null) return;
-  if (srv.gravando_fundo) msg('Gravando o fundo… não mexa no celular (3 s).', 'var(--al)');
-  else if (!srv.fundo_ok) msg('Espere um gancho VAZIO na linha vermelha e toque "Gravar fundo".', 'var(--al)');
-  else if (srv.mexeu >= 3) msg(`A câmera mexeu ${srv.mexeu} px. Prenda o celular e, com gancho vazio na linha, toque "Gravar fundo".`, 'var(--al)');
+  if (cfg.w !== W || cfg.h !== H) return avisoResolucao();
+  if (sujo()) msg('Calibração alterada. Clique em "Salvar calibração" para usar.', 'var(--al)');
+  else if (srv.gravando_fundo) msg('Gravando o fundo… não mexa na câmera (3 s).', 'var(--al)');
+  else if (!srv.fundo_ok) msg('Espere um gancho VAZIO na linha vermelha e clique em "Gravar fundo".', 'var(--al)');
+  else if (srv.mexeu >= 3) msg(`A câmera mexeu ${srv.mexeu} px. Prenda a câmera e, com gancho vazio na linha, clique em "Gravar fundo".`, 'var(--al)');
   else msg(`Contando · ${srv.fps} quadros/s enviados`, 'var(--mu)');
 }
 
-// ---------- calibração: 3 toques ----------
-const PASSOS = ['Toque no TOPO da peça mais alta, logo ABAIXO da gancheira (onde passa a linha)', 'Toque na BASE da peça mais baixa', 'Toque no TRILHO, onde o trole passa'];
-$('bCal').onclick = () => { calib = []; msg(PASSOS[0], 'var(--al)'); };
+// ---------------- calibração ----------------
+const PASSOS = ['Clique no TOPO da peça mais alta, logo ABAIXO da gancheira (onde passa a linha)',
+                'Clique na BASE da peça mais baixa', 'Clique no TRILHO, onde o trole passa'];
+function copiarParaEdicao() {
+  ed = cfg.x != null ? { x: cfg.x, y0: cfg.y0, y1: cfg.y1, ry: cfg.ry } : null; campos(); botoes();
+}
+const sujo = () => !!ed && cfg.x != null && (ed.x !== cfg.x || ed.y0 !== cfg.y0 || ed.y1 !== cfg.y1 || ed.ry !== cfg.ry);
+function botoes() { $('bSalv').disabled = !ed || !(sujo() || cfg.x == null || cfg.w !== W || cfg.h !== H); $('bDesf').disabled = !sujo(); }
+function campos() {
+  for (const [k, id] of [['x', 'eX'], ['y0', 'eY0'], ['y1', 'eY1'], ['ry', 'eRy']]) $(id).value = ed ? ed[k] : '';
+}
+function limitar() {
+  ed.x = Math.max(3, Math.min(W - 4, Math.round(ed.x)));
+  for (const k of ['y0', 'y1', 'ry']) ed[k] = Math.max(0, Math.min(H - 1, Math.round(ed[k])));
+}
+for (const [k, id] of [['x', 'eX'], ['y0', 'eY0'], ['y1', 'eY1'], ['ry', 'eRy']]) {
+  $(id).oninput = () => { if (!ed) return; ed[k] = +$(id).value; limitar(); sel = k === 'x' ? 'x' : k; botoes(); mostrar(); };
+}
+$('bDesf').onclick = () => { copiarParaEdicao(); mostrar(); };
+$('bSalv').onclick = salvarCalibracao;
+async function salvarCalibracao() {
+  if (!ed) return;
+  if (ed.y1 - ed.y0 < 20) { msg('A base precisa ficar abaixo do topo.', 'var(--er)'); return; }
+  cfg = await api('/api/config', { x: ed.x, y0: Math.min(ed.y0, ed.y1), y1: Math.max(ed.y0, ed.y1), ry: ed.ry, w: W, h: H });
+  copiarParaEdicao();
+  msg('Calibração salva! Agora espere um gancho VAZIO na linha e clique em "Gravar fundo".', 'var(--ok)');
+  mostrar();
+}
+
+$('bCal').onclick = () => { calib = []; vis.className = 'mira'; msg(PASSOS[0], 'var(--al)'); };
+const ptVideo = e => { const r = vis.getBoundingClientRect(); return [(e.clientX - r.left) / r.width * W, (e.clientY - r.top) / r.height * H]; };
+function alvo(px, py) {           // qual ponto da calibração está sob o mouse (raio de 14 px na tela)
+  if (!ed) return null;
+  const r = vis.getBoundingClientRect(), k = r.width / W, R = 14 / k;
+  const d = (x, y) => Math.hypot(px - x, py - y);
+  if (d(ed.x, ed.y0) < R) return 'y0';
+  if (d(ed.x, ed.y1) < R) return 'y1';
+  if (d(ed.x, ed.ry) < R) return 'ry';
+  if (Math.abs(px - ed.x) < R && py > Math.min(ed.y0, ed.y1) && py < Math.max(ed.y0, ed.y1)) return 'x';
+  return null;
+}
 vis.addEventListener('pointerdown', async e => {
-  if (!calib) return;
-  const r = vis.getBoundingClientRect();
-  const x = Math.round((e.clientX - r.left) / r.width * W), y = Math.round((e.clientY - r.top) / r.height * H);
-  calib.push([x, y]);
-  if (calib.length < 3) { msg(PASSOS[calib.length], 'var(--al)'); return; }
-  const [[x1, ya], [, yb], [, yr]] = calib; calib = null;
-  cfg = await api('/api/config', { x: x1, y0: Math.min(ya, yb), y1: Math.max(ya, yb), ry: yr, w: W, h: H });
-  msg('Calibrado! Agora espere um gancho VAZIO na linha e toque "Gravar fundo".', 'var(--ok)');
-  $('bFun').disabled = false;
+  const [px, py] = ptVideo(e); mouse = [px, py];
+  if (calib) {
+    calib.push([Math.round(px), Math.round(py)]);
+    if (calib.length < 3) { msg(PASSOS[calib.length], 'var(--al)'); return; }
+    const [[x1, a], [, b], [, r]] = calib; calib = null; vis.className = '';
+    ed = { x: x1, y0: Math.min(a, b), y1: Math.max(a, b), ry: r }; limitar(); campos();
+    $('dCal').open = true;
+    await salvarCalibracao(); return;
+  }
+  const a = alvo(px, py);
+  if (a) { arrastando = a; sel = a; vis.setPointerCapture(e.pointerId); e.preventDefault(); }
+});
+vis.addEventListener('pointermove', e => {
+  const [px, py] = ptVideo(e); mouse = [px, py];
+  if (arrastando) {
+    if (arrastando === 'x') ed.x = px; else ed[arrastando] = py;
+    limitar(); campos(); botoes(); msg('Solte para terminar. Depois clique em "Salvar calibração".', 'var(--al)');
+  } else if (!calib) vis.className = alvo(px, py) ? 'arrasta' : '';
+});
+vis.addEventListener('pointerup', () => { if (arrastando) { arrastando = null; mostrar(); } });
+vis.addEventListener('pointerleave', () => { if (!arrastando) mouse = null; });
+document.addEventListener('keydown', e => {
+  if (!ed || !mouse || !['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) return;
+  if (document.activeElement && ['INPUT', 'SELECT'].includes(document.activeElement.tagName)) return;
+  const p = e.shiftKey ? 10 : 1; e.preventDefault();
+  if (sel === 'x' || e.key === 'ArrowLeft' || e.key === 'ArrowRight') ed.x += (e.key === 'ArrowRight' ? p : e.key === 'ArrowLeft' ? -p : 0);
+  if (sel !== 'x') ed[sel] += (e.key === 'ArrowDown' ? p : e.key === 'ArrowUp' ? -p : 0);
+  limitar(); campos(); botoes(); mostrar();
 });
 $('bFun').onclick = () => { if (ws && ws.readyState === 1) { ws.send(JSON.stringify({ tipo: 'fundo' })); srv.gravando_fundo = true; mostrar(); } };
 $('bIni').onclick = iniciar;
 
-// ---------- laço: desenha e manda a linha de pixels ----------
+// ---------------- tela ----------------
 function desenhar() {
   requestAnimationFrame(desenhar);
   if (!W) return;
-  const esc = Math.min(vis.parentElement.clientWidth / W, vis.parentElement.clientHeight / H);
+  const box = vis.parentElement, esc = Math.min(box.clientWidth / W, box.clientHeight / H);
   const cw = Math.round(W * esc), ch = Math.round(H * esc);
   if (vis.width !== cw || vis.height !== ch) { vis.width = cw; vis.height = ch; }
   cx.drawImage(vid, 0, 0, cw, ch);
-  if (cfg.x != null) {
-    cx.strokeStyle = '#ff3b30'; cx.lineWidth = 3; cx.beginPath();
-    cx.moveTo(cfg.x * esc, cfg.y0 * esc); cx.lineTo(cfg.x * esc, cfg.y1 * esc); cx.stroke();
-    cx.strokeStyle = '#ff2dd4'; cx.beginPath(); cx.arc(cfg.x * esc, cfg.ry * esc, 8, 0, 7); cx.stroke();
+  const g = ed || (cfg.x != null ? cfg : null);
+  if (g) {
+    const X = g.x * esc;
+    cx.lineWidth = 3; cx.strokeStyle = '#ff3b30'; cx.beginPath(); cx.moveTo(X, g.y0 * esc); cx.lineTo(X, g.y1 * esc); cx.stroke();
+    for (const [k, cor] of [['y0', '#ffd60a'], ['y1', '#ffd60a'], ['ry', '#ff2dd4']]) {
+      cx.beginPath(); cx.arc(X, g[k] * esc, k === sel ? 9 : 7, 0, 7);
+      cx.fillStyle = cor; cx.globalAlpha = .35; cx.fill(); cx.globalAlpha = 1; cx.strokeStyle = cor; cx.lineWidth = k === sel ? 3 : 2; cx.stroke();
+    }
+    if (sujo()) { cx.setLineDash([6, 5]); cx.strokeStyle = '#ffffff99'; cx.lineWidth = 1.5; cx.beginPath();
+      cx.moveTo(cfg.x * esc, cfg.y0 * esc); cx.lineTo(cfg.x * esc, cfg.y1 * esc); cx.stroke(); cx.setLineDash([]); }
   }
-  if (calib) {
-    cx.fillStyle = '#ffd60a';
-    for (const [x, y] of calib) { cx.beginPath(); cx.arc(x * esc, y * esc, 6, 0, 7); cx.fill(); }
+  if (calib) { cx.fillStyle = '#ffd60a'; for (const [x, y] of calib) { cx.beginPath(); cx.arc(x * esc, y * esc, 6, 0, 7); cx.fill(); } }
+  // lupa: aumenta 3x em volta do mouse durante a calibração
+  const mostrarLupa = mouse && (calib || arrastando || (ed && alvo(mouse[0], mouse[1])));
+  lupa.style.display = mostrarLupa ? 'block' : 'none';
+  if (mostrarLupa) {
+    const z = 3, s = 170 / z; lx.imageSmoothingEnabled = false;
+    lx.drawImage(vid, mouse[0] - s / 2, mouse[1] - s / 2, s, s, 0, 0, 170, 170);
+    lx.strokeStyle = '#ffd60a'; lx.lineWidth = 1; lx.beginPath(); lx.moveTo(85, 0); lx.lineTo(85, 170); lx.moveTo(0, 85); lx.lineTo(170, 85); lx.stroke();
+    lupa.style.left = (mouse[0] * esc < box.clientWidth / 2 ? box.clientWidth - 190 : 10) + 'px';
   }
-  const agora = performance.now();
+  if (!leitor) processar(vid, performance.now());          // navegador sem leitor de quadros: envia por aqui
+}
+
+// ---------------- envio da linha de pixels ----------------
+// No Chrome/Edge do PC usa o leitor de quadros (continua enviando com a janela minimizada); senão, o laço da tela.
+function iniciarLeitor() {
+  if (!('MediaStreamTrackProcessor' in window) || !track) return;
+  try {
+    clone = track.clone();
+    const proc = new MediaStreamTrackProcessor({ track: clone });
+    leitor = proc.readable.getReader(); const meu = leitor;
+    (async () => {
+      while (leitor === meu) {
+        const { value: q, done } = await meu.read().catch(() => ({ done: true }));
+        if (done) break;
+        try { processar(q, performance.now()); } finally { q.close(); }
+      }
+    })();
+  } catch (e) { leitor = null; }
+}
+
+function processar(fonte, agora) {
   if (cfg.x == null || cfg.ya == null || !ws || ws.readyState !== 1 || agora - ultEnvio < 1000 / FPS_ENVIO - 4) return;
   if (cfg.w !== W || cfg.h !== H) return;
   ultEnvio = agora;
-  medirMovimento(agora);
+  medirMovimento(fonte, agora);
   const ya = cfg.ya, n = Math.min(cfg.yb, H) - ya, x0 = Math.max(0, cfg.x - 3);
   if (tira.width !== 6 || tira.height !== n) { tira.width = 6; tira.height = n; }
-  tx.drawImage(vid, x0, ya, 6, n, 0, 0, 6, n);
+  tx.drawImage(fonte, x0, ya, 6, n, 0, 0, 6, n);
   const px = tx.getImageData(0, 0, 6, n).data;
   const buf = new ArrayBuffer(16 + n * 3), dv = new DataView(buf), out = new Uint8Array(buf, 16);
   dv.setFloat64(0, performance.timeOrigin + agora, true); dv.setFloat32(8, movAtual, true);
@@ -147,18 +346,32 @@ function desenhar() {
     let s = 0; for (let i = 0; i < 6; i++) s += px[(y * 6 + i) * 4 + c];
     out[y * 3 + c] = Math.round(s / 6);
   }
-  ws.send(buf); enviados++;
+  ws.send(buf);
+  pintarFita(out, n, ya);
+}
+
+function pintarFita(rgb, n, ya) {         // acrescenta a coluna à direita da "linha de pixels"
+  if (document.hidden || !$('dFita').open) return;
+  if (col1.height !== n) { col1.width = 1; col1.height = n; }
+  const im = c1x.createImageData(1, n);
+  for (let y = 0; y < n; y++) { im.data[y * 4] = rgb[y * 3]; im.data[y * 4 + 1] = rgb[y * 3 + 1]; im.data[y * 4 + 2] = rgb[y * 3 + 2]; im.data[y * 4 + 3] = 255; }
+  c1x.putImageData(im, 0, 0);
+  fx.drawImage(fita, 1, 0, fita.width - 1, fita.height, 0, 0, fita.width - 1, fita.height);
+  fx.drawImage(col1, 0, 0, 1, n, fita.width - 1, 0, 1, fita.height);
+  const k = fita.height / n;                      // marcas: topo, base (amarelo) e trilho (rosa)
+  fx.fillStyle = '#ffd60a'; fx.fillRect(fita.width - 4, (cfg.y0 - ya) * k, 4, 1); fx.fillRect(fita.width - 4, (cfg.y1 - ya) * k, 4, 1);
+  fx.fillStyle = '#ff2dd4'; fx.fillRect(fita.width - 4, (cfg.ry - ya) * k, 4, 1);
 }
 
 // movimento perto da linha (2x por segundo, compara com 1 s antes) -> parada / funcionando
-function medirMovimento(agora) {
-  if (agora - ultMov < 500) { return; }
+function medirMovimento(fonte, agora) {
+  if (agora - ultMov < 500) return;
   ultMov = agora;
   const xa = Math.max(0, cfg.x - (W >> 2)), xb = Math.min(W, cfg.x + (W >> 2));
   const ya = Math.max(0, Math.min(cfg.ry, cfg.y0) - 20), yb = Math.min(H, cfg.y1 + 20);
   const w = 180, h = Math.max(20, Math.round(180 * (yb - ya) / (xb - xa)));
   if (movc.width !== w || movc.height !== h) { movc.width = w; movc.height = h; movBuf = []; }
-  mx.drawImage(vid, xa, ya, xb - xa, yb - ya, 0, 0, w, h);
+  mx.drawImage(fonte, xa, ya, xb - xa, yb - ya, 0, 0, w, h);
   const d = mx.getImageData(0, 0, w, h).data, g = new Uint8Array(w * h);
   for (let i = 0; i < w * h; i++) g[i] = (d[i * 4] * 77 + d[i * 4 + 1] * 150 + d[i * 4 + 2] * 29) >> 8;
   movBuf.push(g); if (movBuf.length > 3) movBuf.shift();
@@ -168,9 +381,18 @@ function medirMovimento(agora) {
     movAtual = c / g.length;
   }
 }
+
 document.addEventListener('visibilitychange', async () => {
   if (document.visibilityState === 'visible') { try { await navigator.wakeLock.request('screen'); } catch (e) {} }
 });
+requestAnimationFrame(desenhar);
+// no PC, se a câmera já foi liberada antes, liga sozinha
+(async () => {
+  try {
+    const p = await navigator.permissions.query({ name: 'camera' });
+    if (p.state === 'granted' && ler('cam') !== null) iniciar();
+  } catch (e) {}
+})();
 </script>
 </body>
 </html>
