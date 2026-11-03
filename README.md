@@ -53,6 +53,30 @@ As tabelas `monovia_*` são criadas sozinhas e não mexem nas tabelas do Banho e
 
 Consumo de internet: cerca de 60 MB por hora. Prefira Wi-Fi.
 
+## 2a. Ver a câmera do celular e calibrar pelo PC (recomendado)
+
+O celular fica preso na monovia só filmando. A calibração e os ajustes são feitos pelo PC.
+
+1. **No celular**, abra `https://SEU-DOMINIO/camera`, entre com o login e toque em **Iniciar**. Não precisa mexer mais nele.
+2. **No PC**, abra `https://SEU-DOMINIO/calibrar` (ou clique em "ver/calibrar" no painel). Aparece a imagem do celular **ao vivo**.
+3. **Clique em Calibrar** e marque os 3 pontos na imagem:
+   - o topo da peça mais alta, logo abaixo da gancheira;
+   - a base da peça mais baixa;
+   - o trilho, onde o trole passa.
+   
+   A lupa ajuda a acertar o ponto.
+4. **Ajuste se precisar**: arraste as bolinhas ou a linha, use as setas do teclado ou digite os números.
+5. **Clique em Salvar.** O celular passa a usar a calibração na hora.
+6. **Com um gancho vazio na linha vermelha, clique em Gravar fundo.**
+7. **Em "Câmera do celular"** dá para, pelo PC:
+   - trocar a câmera (traseira ou grande-angular);
+   - mudar a resolução;
+   - travar o foco e a exposição;
+   - recarregar a página do celular.
+8. **Confira a linha de pixels.** O quadro mostra o que a contagem está vendo.
+
+O celular só manda fotos enquanto alguém está com o `/calibrar` aberto: 2 por segundo, mais uma a cada 30 s fora disso. Nada é gravado; o servidor guarda só a última foto na memória.
+
 ## 2b. Usar a câmera do PC (webcam USB) em vez do celular
 
 1. **Instale a webcam presa num suporte fixo**, de frente para a monovia, e ligue no PC.
@@ -165,6 +189,6 @@ python teste/simular_celular.py video.mp4 http://localhost:8000 --usuario admin 
 
 - **Acesso:** usuário e senha. As senhas são guardadas com hash PBKDF2 (200 mil iterações), e a sessão fica num cookie assinado com HttpOnly e Secure. Depois de 8 senhas erradas em 10 minutos, o login trava por IP. Tudo passa por HTTPS ou WSS, que o Railway fornece.
 - **Usuário apagado** perde o acesso na hora.
-- **O que trafega:** uma coluna de pixels por quadro. Nenhum vídeo é gravado.
+- **O que trafega:** uma coluna de pixels por quadro e, só enquanto alguém está calibrando pelo PC, fotos da câmera (mantidas apenas em memória, a última). Nenhum vídeo é gravado.
 - **O que fica no banco:** contagens, eventos e miniaturas de 128x32 dos ganchos, apagadas depois de `DIAS_IMAGENS` dias.
 - **Banco:** o mesmo PostgreSQL do Banho e Monovia, em tabelas próprias (`monovia_*`).

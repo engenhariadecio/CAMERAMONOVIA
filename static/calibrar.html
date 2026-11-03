@@ -1,0 +1,299 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Monovia · Calibrar pelo PC</title>
+<style>
+  :root { --bg:#0e1116; --pn:#171b22; --pn2:#1f242d; --bd:#2a303b; --tx:#e8ebf0; --mu:#8b93a1; --ok:#2fbf71; --al:#f2b233; --er:#ef5350; --ac:#3d8bfd; }
+  * { box-sizing:border-box; }
+  [hidden] { display:none !important; }
+  html,body { margin:0; height:100%; background:var(--bg); color:var(--tx); font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
+  #wrap { height:100%; display:grid; grid-template-rows:60vh 1fr; }
+  @media (min-width: 900px) { #wrap { grid-template-rows:none; grid-template-columns:1fr 380px; } }
+  #tela { position:relative; min-height:0; display:flex; align-items:center; justify-content:center; overflow:hidden; background:#000; }
+  canvas#vis { max-width:100%; max-height:100%; touch-action:none; }
+  canvas#vis.mira { cursor:crosshair; }
+  canvas#vis.arrasta { cursor:grab; }
+  #lupa { position:absolute; left:10px; top:10px; width:170px; height:170px; border:2px solid #ffd60a; border-radius:8px; background:#000; display:none; pointer-events:none; }
+  #semimg { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; text-align:center; color:var(--mu); padding:24px; font-size:15px; line-height:1.5; }
+  #idade { position:absolute; right:10px; bottom:10px; font-size:12px; color:#fff; background:#0008; padding:3px 8px; border-radius:6px; }
+  #lado { background:var(--pn); overflow-y:auto; padding:12px; display:grid; gap:10px; align-content:start; }
+  h1 { font-size:16px; margin:0; display:flex; justify-content:space-between; align-items:center; }
+  h1 a { font-size:13px; font-weight:400; }
+  .pill { font-size:13px; color:var(--mu); }
+  .dot { display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:6px; background:var(--er); vertical-align:middle; }
+  .dot.on { background:var(--ok); }
+  #nums { display:grid; grid-template-columns:repeat(4,1fr); gap:6px; text-align:center; }
+  .n b { display:block; font-size:20px; font-variant-numeric:tabular-nums; }
+  .n span { font-size:11px; color:var(--mu); text-transform:uppercase; letter-spacing:.04em; }
+  #msg { font-size:14px; min-height:40px; line-height:20px; }
+  .bts { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; }
+  button, select, input { font:inherit; font-size:15px; border-radius:10px; color:var(--tx); }
+  button { padding:11px 6px; border:0; background:#262c36; cursor:pointer; }
+  button.pri { background:var(--ac); color:#fff; }
+  button:disabled { opacity:.4; cursor:default; }
+  select, input { width:100%; padding:8px; background:var(--pn2); border:1px solid var(--bd); }
+  details { background:var(--pn2); border:1px solid var(--bd); border-radius:12px; padding:8px 10px; }
+  summary { cursor:pointer; font-size:14px; font-weight:600; padding:2px 0; }
+  .campos { display:grid; grid-template-columns:repeat(4,1fr); gap:6px; margin-top:8px; }
+  .campos label, .linha label { font-size:12px; color:var(--mu); display:grid; gap:3px; }
+  .linha { display:grid; gap:8px; margin-top:8px; }
+  .linha label.chk { display:flex; gap:8px; align-items:center; font-size:14px; color:var(--tx); }
+  .chk input { width:auto; }
+  .dica { font-size:12px; color:var(--mu); margin:6px 0 0; line-height:1.4; }
+  #fita { width:100%; height:140px; background:#000; border-radius:8px; image-rendering:pixelated; display:block; margin-top:8px; }
+  a { color:var(--ac); }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="tela">
+    <canvas id="vis" width="640" height="360"></canvas>
+    <canvas id="lupa" width="170" height="170"></canvas>
+    <div id="semimg">Esperando a imagem do celular…<br>No celular, abra <b>/camera</b> e toque em <b>Iniciar</b>.</div>
+    <span id="idade" hidden></span>
+  </div>
+  <div id="lado">
+    <h1>Câmera da monovia <a href="/">painel</a></h1>
+    <div class="pill"><span class="dot" id="dot"></span><span id="tCel">celular desconectado</span></div>
+    <div id="nums">
+      <div class="n"><b id="nPecas">–</b><span>peças hoje</span></div>
+      <div class="n"><b id="nGanchos">–</b><span>ganchos</span></div>
+      <div class="n"><b id="nVel">–</b><span>m/s</span></div>
+      <div class="n"><b id="nEst">–</b><span>monovia</span></div>
+    </div>
+    <div id="msg"><span id="txt"></span></div>
+    <div class="bts">
+      <button id="bCal" disabled>Calibrar</button>
+      <button class="pri" id="bSalv" disabled>Salvar</button>
+      <button id="bFun" disabled>Gravar fundo</button>
+    </div>
+
+    <details id="dCal" open>
+      <summary>Ajuste fino da calibração</summary>
+      <div class="campos">
+        <label>Linha (x)<input id="eX" type="number" step="1"></label>
+        <label>Topo<input id="eY0" type="number" step="1"></label>
+        <label>Base<input id="eY1" type="number" step="1"></label>
+        <label>Trilho<input id="eRy" type="number" step="1"></label>
+      </div>
+      <p class="dica"><b>Calibrar:</b> clique no topo da peça mais alta (logo abaixo da gancheira), na base da peça mais baixa e no trilho onde o trole passa. Depois dá para <b>arrastar</b> as bolinhas e a linha, usar as <b>setas</b> do teclado com o mouse sobre a imagem (Shift = 10 px) ou digitar os números. Clique em <b>Salvar</b>: o celular passa a usar na hora.</p>
+      <div class="bts" style="grid-template-columns:1fr; margin-top:8px"><button id="bDesf" disabled>Desfazer alterações</button></div>
+    </details>
+
+    <details id="dCam" open>
+      <summary>Câmera do celular</summary>
+      <div class="linha">
+        <label>Qual câmera<select id="sCam" disabled></select></label>
+        <label>Resolução<select id="sRes" disabled>
+          <option value="1280x720">1280 × 720 (recomendado)</option>
+          <option value="1920x1080">1920 × 1080</option>
+          <option value="640x480">640 × 480</option>
+        </select></label>
+        <label class="chk" id="lTrava" hidden><input type="checkbox" id="cTrava"> Travar foco e exposição</label>
+        <button id="bRec" disabled>Recarregar a página do celular</button>
+      </div>
+    </details>
+
+    <details id="dFita" open>
+      <summary>Linha de pixels (últimos ~20 s)</summary>
+      <canvas id="fita" width="330" height="140"></canvas>
+      <p class="dica">É o que a contagem enxerga. Cada gancho vira um bloco e o espaço entre as peças vira uma faixa. Marcas: topo e base (amarelo), trilho (rosa).</p>
+    </details>
+  </div>
+</div>
+<script>
+const $ = id => document.getElementById(id);
+const vis = $('vis'), cx = vis.getContext('2d'), lupa = $('lupa'), lx = lupa.getContext('2d'), fita = $('fita'), fx = fita.getContext('2d');
+let cfg = {}, ed = null, sel = 'y0', arrastando = null, mouse = null, calib = null, cam = {}, st = {};
+let W = 0, H = 0;                       // resolução da câmera do celular (coordenadas da calibração)
+const foto = new Image(); let temFoto = false;
+
+function msg(t, cor) { $('txt').textContent = t; $('txt').style.color = cor || ''; }
+async function api(c, corpo) {
+  const r = await fetch(c, corpo ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(corpo) } : {});
+  if (r.status === 401) { location.href = '/entrar?prox=/calibrar'; throw new Error('401'); }
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) { msg(j.detail || 'erro', 'var(--er)'); throw new Error(j.detail); }
+  return j;
+}
+
+// ---------------- imagem do celular (foto seguida) ----------------
+async function puxarFoto() {
+  try {
+    const r = await fetch('/api/foto.jpg?' + Date.now(), { cache: 'no-store' });
+    if (r.status === 401) { location.href = '/entrar?prox=/calibrar'; return; }
+    if (r.ok) {
+      const idade = parseFloat(r.headers.get('X-Idade') || '0');
+      const url = URL.createObjectURL(await r.blob());
+      await new Promise(ok => { foto.onload = ok; foto.onerror = ok; foto.src = url; });
+      URL.revokeObjectURL(url); temFoto = true;
+      $('semimg').hidden = true; $('idade').hidden = false;
+      $('idade').textContent = idade < 3 ? 'ao vivo' : `imagem de ${Math.round(idade)} s atrás`;
+    }
+  } catch (e) {}
+  setTimeout(puxarFoto, 400);
+}
+
+// ---------------- estado do celular e da contagem ----------------
+async function atualizar() {
+  try {
+    cam = await api('/api/camera');
+    const inf = cam.info || {};
+    $('dot').classList.toggle('on', cam.conectado);
+    $('tCel').textContent = cam.conectado ? `celular conectado · ${inf.w || '?'}×${inf.h || '?'}${cam.fps ? ' · ' + cam.fps + ' q/s' : ''}` : 'celular desconectado';
+    if (inf.w) { W = inf.w; H = inf.h; }
+    // câmeras do celular
+    const cams = inf.cameras || [];
+    const atual = [...$('sCam').options].map(o => o.value).join('|');
+    if (atual !== cams.map(c => c.id).join('|')) $('sCam').innerHTML = cams.map(c => `<option value="${c.id}">${c.nome}</option>`).join('');
+    if (document.activeElement !== $('sCam')) $('sCam').value = inf.camera || '';
+    if (document.activeElement !== $('sRes') && inf.res) $('sRes').value = inf.res;
+    $('lTrava').hidden = !inf.trava_pode; $('cTrava').checked = !!inf.trava;
+    for (const id of ['sCam', 'sRes', 'bRec']) $(id).disabled = !cam.conectado;
+    $('bCal').disabled = !temFoto || !W;
+    if (!arrastando && !calib && !sujo()) { const c = await api('/api/config'); cfg = c; copiarParaEdicao(); }
+    st = await api('/api/status');
+    $('nPecas').textContent = st.hoje.pecas; $('nGanchos').textContent = st.hoje.ganchos;
+    $('nVel').textContent = st.velocidade_m_s != null ? st.velocidade_m_s.toFixed(3) : '–';
+    $('nEst').textContent = !st.conectado ? '–' : st.parada ? 'PARADA' : 'andando';
+    $('nEst').style.color = st.parada ? 'var(--er)' : 'var(--ok)';
+    $('bFun').disabled = !cam.conectado || cfg.x == null || cam.gravando_fundo || sujo();
+    mensagem();
+  } catch (e) {}
+}
+function mensagem() {
+  if (calib || arrastando) return;
+  if (!cam.conectado) return msg('O celular não está conectado. No celular, abra /camera e toque em Iniciar.', 'var(--al)');
+  if (cfg.x == null) return msg('Clique em "Calibrar" e marque os 3 pontos na imagem.', 'var(--al)');
+  if (cfg.w !== W || cfg.h !== H) return msg(`O celular está em ${W}×${H}, mas a calibração foi feita em ${cfg.w}×${cfg.h}. Escolha ${cfg.w}×${cfg.h} em Resolução ou calibre de novo.`, 'var(--al)');
+  if (sujo()) return msg('Calibração alterada. Clique em "Salvar" para o celular usar.', 'var(--al)');
+  if (cam.gravando_fundo) return msg('Gravando o fundo… (3 s)', 'var(--al)');
+  if (!cam.fundo_ok) return msg('Espere um gancho VAZIO ficar na linha vermelha e clique em "Gravar fundo".', 'var(--al)');
+  if (cam.mexeu >= 3) return msg(`A câmera mexeu ${cam.mexeu} px. Prenda o celular e, com gancho vazio na linha, clique em "Gravar fundo".`, 'var(--al)');
+  msg('Contando normalmente.', 'var(--ok)');
+}
+
+// ---------------- calibração ----------------
+const PASSOS = ['Clique no TOPO da peça mais alta, logo ABAIXO da gancheira', 'Clique na BASE da peça mais baixa', 'Clique no TRILHO, onde o trole passa'];
+function copiarParaEdicao() { ed = cfg.x != null ? { x: cfg.x, y0: cfg.y0, y1: cfg.y1, ry: cfg.ry } : null; campos(); botoes(); }
+const sujo = () => !!ed && (cfg.x == null || ed.x !== cfg.x || ed.y0 !== cfg.y0 || ed.y1 !== cfg.y1 || ed.ry !== cfg.ry);
+function botoes() { $('bSalv').disabled = !ed || !(sujo() || cfg.x == null || cfg.w !== W || cfg.h !== H); $('bDesf').disabled = !sujo(); }
+function campos() { for (const [k, id] of [['x', 'eX'], ['y0', 'eY0'], ['y1', 'eY1'], ['ry', 'eRy']]) if (document.activeElement !== $(id)) $(id).value = ed ? ed[k] : ''; }
+function limitar() { ed.x = Math.max(3, Math.min(W - 4, Math.round(ed.x))); for (const k of ['y0', 'y1', 'ry']) ed[k] = Math.max(0, Math.min(H - 1, Math.round(ed[k]))); }
+for (const [k, id] of [['x', 'eX'], ['y0', 'eY0'], ['y1', 'eY1'], ['ry', 'eRy']])
+  $(id).oninput = () => { if (!ed) return; ed[k] = +$(id).value; limitar(); sel = k; botoes(); mensagem(); };
+$('bDesf').onclick = () => { copiarParaEdicao(); mensagem(); };
+$('bSalv').onclick = salvar;
+async function salvar() {
+  if (!ed) return;
+  if (Math.abs(ed.y1 - ed.y0) < 20) { msg('A base precisa ficar abaixo do topo.', 'var(--er)'); return; }
+  cfg = await api('/api/config', { x: ed.x, y0: Math.min(ed.y0, ed.y1), y1: Math.max(ed.y0, ed.y1), ry: ed.ry, w: W, h: H });
+  copiarParaEdicao();
+  msg('Salvo! O celular já está usando. Agora espere um gancho VAZIO na linha e clique em "Gravar fundo".', 'var(--ok)');
+}
+$('bCal').onclick = () => { calib = []; vis.className = 'mira'; msg(PASSOS[0], 'var(--al)'); };
+$('bFun').onclick = async () => { await api('/api/fundo', {}); cam.gravando_fundo = true; msg('Gravando o fundo… (3 s)', 'var(--al)'); };
+$('sCam').onchange = () => api('/api/camera/comando', { acao: 'camera', valor: $('sCam').value });
+$('sRes').onchange = () => api('/api/camera/comando', { acao: 'res', valor: $('sRes').value });
+$('cTrava').onchange = () => api('/api/camera/comando', { acao: 'trava', valor: $('cTrava').checked });
+$('bRec').onclick = () => api('/api/camera/comando', { acao: 'recarregar' });
+
+const ptCam = e => { const r = vis.getBoundingClientRect(); return [(e.clientX - r.left) / r.width * W, (e.clientY - r.top) / r.height * H]; };
+function alvo(px, py) {
+  if (!ed) return null;
+  const r = vis.getBoundingClientRect(), R = 14 / (r.width / W), d = (x, y) => Math.hypot(px - x, py - y);
+  if (d(ed.x, ed.y0) < R) return 'y0';
+  if (d(ed.x, ed.y1) < R) return 'y1';
+  if (d(ed.x, ed.ry) < R) return 'ry';
+  if (Math.abs(px - ed.x) < R && py > Math.min(ed.y0, ed.y1) && py < Math.max(ed.y0, ed.y1)) return 'x';
+  return null;
+}
+vis.addEventListener('pointerdown', async e => {
+  if (!W) return;
+  const [px, py] = ptCam(e); mouse = [px, py];
+  if (calib) {
+    calib.push([Math.round(px), Math.round(py)]);
+    if (calib.length < 3) { msg(PASSOS[calib.length], 'var(--al)'); return; }
+    const [[x1, a], [, b], [, r]] = calib; calib = null; vis.className = '';
+    ed = { x: x1, y0: Math.min(a, b), y1: Math.max(a, b), ry: r }; limitar(); campos(); botoes();
+    msg('Pontos marcados. Ajuste se precisar e clique em "Salvar".', 'var(--al)'); return;
+  }
+  const a = alvo(px, py);
+  if (a) { arrastando = a; sel = a; vis.setPointerCapture(e.pointerId); e.preventDefault(); }
+});
+vis.addEventListener('pointermove', e => {
+  if (!W) return;
+  const [px, py] = ptCam(e); mouse = [px, py];
+  if (arrastando) { if (arrastando === 'x') ed.x = px; else ed[arrastando] = py; limitar(); campos(); botoes(); }
+  else if (!calib) vis.className = alvo(px, py) ? 'arrasta' : '';
+});
+vis.addEventListener('pointerup', () => { if (arrastando) { arrastando = null; mensagem(); } });
+vis.addEventListener('pointerleave', () => { if (!arrastando) mouse = null; });
+document.addEventListener('keydown', e => {
+  if (!ed || !mouse || !['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) return;
+  if (document.activeElement && ['INPUT', 'SELECT'].includes(document.activeElement.tagName)) return;
+  const p = e.shiftKey ? 10 : 1; e.preventDefault();
+  if (e.key === 'ArrowLeft') ed.x -= p; else if (e.key === 'ArrowRight') ed.x += p;
+  else if (sel !== 'x') ed[sel] += (e.key === 'ArrowDown' ? p : -p);
+  limitar(); campos(); botoes(); mensagem();
+});
+
+// ---------------- desenho ----------------
+function desenhar() {
+  requestAnimationFrame(desenhar);
+  if (!temFoto || !W) return;
+  const box = vis.parentElement, esc = Math.min(box.clientWidth / W, box.clientHeight / H);
+  const cw = Math.round(W * esc), ch = Math.round(H * esc);
+  if (vis.width !== cw || vis.height !== ch) { vis.width = cw; vis.height = ch; }
+  cx.drawImage(foto, 0, 0, cw, ch);
+  const g = ed || (cfg.x != null ? cfg : null);
+  if (g) {
+    const X = g.x * esc;
+    cx.lineWidth = 3; cx.strokeStyle = '#ff3b30'; cx.beginPath(); cx.moveTo(X, g.y0 * esc); cx.lineTo(X, g.y1 * esc); cx.stroke();
+    for (const [k, cor] of [['y0', '#ffd60a'], ['y1', '#ffd60a'], ['ry', '#ff2dd4']]) {
+      cx.beginPath(); cx.arc(X, g[k] * esc, k === sel ? 9 : 7, 0, 7);
+      cx.fillStyle = cor; cx.globalAlpha = .35; cx.fill(); cx.globalAlpha = 1; cx.strokeStyle = cor; cx.lineWidth = k === sel ? 3 : 2; cx.stroke();
+    }
+    if (sujo()) { cx.setLineDash([6, 5]); cx.strokeStyle = '#ffffff99'; cx.lineWidth = 1.5; cx.beginPath();
+      cx.moveTo(cfg.x * esc, cfg.y0 * esc); cx.lineTo(cfg.x * esc, cfg.y1 * esc); cx.stroke(); cx.setLineDash([]); }
+  }
+  if (calib) { cx.fillStyle = '#ffd60a'; for (const [x, y] of calib) { cx.beginPath(); cx.arc(x * esc, y * esc, 6, 0, 7); cx.fill(); } }
+  const verLupa = mouse && (calib || arrastando || (ed && alvo(mouse[0], mouse[1])));
+  lupa.style.display = verLupa ? 'block' : 'none';
+  if (verLupa) {                                   // lupa 3x (em pixels da câmera do celular)
+    const k = foto.naturalWidth / W, s = 170 / 3; lx.imageSmoothingEnabled = false;
+    lx.fillStyle = '#000'; lx.fillRect(0, 0, 170, 170);
+    lx.drawImage(foto, (mouse[0] - s / 2) * k, (mouse[1] - s / 2) * k, s * k, s * k, 0, 0, 170, 170);
+    lx.strokeStyle = '#ffd60a'; lx.lineWidth = 1; lx.beginPath(); lx.moveTo(85, 0); lx.lineTo(85, 170); lx.moveTo(0, 85); lx.lineTo(170, 85); lx.stroke();
+    lupa.style.left = (mouse[0] * esc < box.clientWidth / 2 ? box.clientWidth - 190 : 10) + 'px';
+  }
+}
+
+// ---------------- linha de pixels ----------------
+const fitaImg = new Image();
+async function puxarFita() {
+  try {
+    const r = await fetch('/api/fita.png?' + Date.now(), { cache: 'no-store' });
+    if (r.ok && $('dFita').open) {
+      const ya = +r.headers.get('X-Ya'), url = URL.createObjectURL(await r.blob());
+      await new Promise(ok => { fitaImg.onload = ok; fitaImg.onerror = ok; fitaImg.src = url; });
+      URL.revokeObjectURL(url);
+      fx.imageSmoothingEnabled = false; fx.fillStyle = '#000'; fx.fillRect(0, 0, fita.width, fita.height);
+      const w = Math.min(fita.width, fitaImg.width);
+      fx.drawImage(fitaImg, fitaImg.width - w, 0, w, fitaImg.height, fita.width - w, 0, w, fita.height);
+      const k = fita.height / fitaImg.height;
+      if (cfg.x != null) for (const [v, cor] of [[cfg.y0, '#ffd60a'], [cfg.y1, '#ffd60a'], [cfg.ry, '#ff2dd4']]) {
+        fx.fillStyle = cor; fx.fillRect(0, (v - ya) * k, 6, 2); fx.fillRect(fita.width - 6, (v - ya) * k, 6, 2);
+      }
+    }
+  } catch (e) {}
+  setTimeout(puxarFita, 1000);
+}
+
+requestAnimationFrame(desenhar);
+puxarFoto(); puxarFita(); atualizar(); setInterval(atualizar, 2000);
+</script>
+</body>
+</html>

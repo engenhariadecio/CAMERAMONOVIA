@@ -7,6 +7,7 @@
 <style>
   :root { --bg:#0e1116; --pn:#171b22; --pn2:#1f242d; --bd:#2a303b; --tx:#e8ebf0; --mu:#8b93a1; --ok:#2fbf71; --al:#f2b233; --er:#ef5350; --ac:#3d8bfd; }
   * { box-sizing:border-box; }
+  [hidden] { display:none !important; }
   html,body { margin:0; height:100%; background:var(--bg); color:var(--tx); font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
   #wrap { height:100%; display:grid; grid-template-rows:58vh 1fr; }
   @media (min-width: 900px) { #wrap { grid-template-rows:none; grid-template-columns:1fr 370px; } }
@@ -143,12 +144,14 @@ async function abrirCamera() {
   W = vid.videoWidth; H = vid.videoHeight;
   guardar('cam', track.getSettings().deviceId || '');
   await listarCameras();
+  ultFoto = -1e9;
   // travar foco/exposição, quando a câmera deixa
   const cap = track.getCapabilities ? track.getCapabilities() : {};
   const pode = (cap.focusMode || []).includes('manual') || (cap.exposureMode || []).includes('manual');
   $('lTrava').hidden = !pode;
   if (pode && ler('trava') === '1') { $('cTrava').checked = true; travar(true); }
   iniciarLeitor();
+  setTimeout(enviarInfo, 300);
   return true;
 }
 
@@ -184,9 +187,44 @@ function avisoResolucao() {
 function conectar() {
   const u = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws/camera';
   ws = new WebSocket(u); ws.binaryType = 'arraybuffer';
-  ws.onopen = () => $('dot').classList.add('on');
+  ws.onopen = () => { $('dot').classList.add('on'); enviarInfo(); };
   ws.onclose = ev => { $('dot').classList.remove('on'); if (ev.code === 4001) { location.href = '/entrar?prox=/camera'; return; } setTimeout(conectar, 3000); };
-  ws.onmessage = ev => { srv = JSON.parse(ev.data); mostrar(); };
+  ws.onmessage = ev => {
+    const d = JSON.parse(ev.data);
+    if (d.tipo === 'cfg') { cfg = d.cfg; if (!arrastando) copiarParaEdicao(); if (W) { avisoResolucao(); mostrar(); } return; }   // calibrado pelo PC
+    if (d.tipo === 'cmd') { comando(d.acao, d.valor); return; }
+    srv = d; mostrar();
+  };
+}
+
+// ---------- controle pelo PC (página /calibrar) ----------
+function enviarInfo() {
+  if (!ws || ws.readyState !== 1 || !W) return;
+  const cams = [...$('sCam').options].map(o => ({ id: o.value, nome: o.textContent }));
+  ws.send(JSON.stringify({ tipo: 'info', w: W, h: H, cameras: cams, camera: track ? track.getSettings().deviceId : '',
+                           res: $('sRes').value, trava_pode: !$('lTrava').hidden, trava: $('cTrava').checked }));
+}
+async function comando(acao, valor) {
+  if (acao === 'recarregar') { location.reload(); return; }
+  if (acao === 'camera') { $('sCam').value = valor; guardar('cam', valor); }
+  if (acao === 'res') { $('sRes').value = valor; guardar('res', valor); }
+  if (acao === 'camera' || acao === 'res') { if (await abrirCamera()) avisoResolucao(); }
+  if (acao === 'trava') { $('cTrava').checked = !!valor; await travar(!!valor); }
+  enviarInfo();
+}
+const fotoC = document.createElement('canvas'), fotoX = fotoC.getContext('2d');
+let ultFoto = -1e9, mandandoFoto = false;
+function talvezFoto(fonte, agora) {          // foto para quem está vendo/calibrando pelo PC
+  if (!ws || ws.readyState !== 1 || !W || mandandoFoto) return;
+  if (agora - ultFoto < (srv.ver ? 500 : 30000)) return;
+  ultFoto = agora; mandandoFoto = true;
+  const w = Math.min(960, W), h = Math.round(H * w / W);
+  if (fotoC.width !== w || fotoC.height !== h) { fotoC.width = w; fotoC.height = h; }
+  fotoX.drawImage(fonte, 0, 0, w, h);
+  fotoC.toBlob(async b => {
+    try { if (b && ws.readyState === 1) ws.send(await new Blob([new TextEncoder().encode('FOTO'), b]).arrayBuffer()); }
+    finally { mandandoFoto = false; }
+  }, 'image/jpeg', 0.75);
 }
 
 function mostrar() {
@@ -212,7 +250,7 @@ const PASSOS = ['Clique no TOPO da peça mais alta, logo ABAIXO da gancheira (on
 function copiarParaEdicao() {
   ed = cfg.x != null ? { x: cfg.x, y0: cfg.y0, y1: cfg.y1, ry: cfg.ry } : null; campos(); botoes();
 }
-const sujo = () => !!ed && cfg.x != null && (ed.x !== cfg.x || ed.y0 !== cfg.y0 || ed.y1 !== cfg.y1 || ed.ry !== cfg.ry);
+const sujo = () => !!ed && (cfg.x == null || ed.x !== cfg.x || ed.y0 !== cfg.y0 || ed.y1 !== cfg.y1 || ed.ry !== cfg.ry);
 function botoes() { $('bSalv').disabled = !ed || !(sujo() || cfg.x == null || cfg.w !== W || cfg.h !== H); $('bDesf').disabled = !sujo(); }
 function campos() {
   for (const [k, id] of [['x', 'eX'], ['y0', 'eY0'], ['y1', 'eY1'], ['ry', 'eRy']]) $(id).value = ed ? ed[k] : '';
@@ -309,7 +347,7 @@ function desenhar() {
     lx.strokeStyle = '#ffd60a'; lx.lineWidth = 1; lx.beginPath(); lx.moveTo(85, 0); lx.lineTo(85, 170); lx.moveTo(0, 85); lx.lineTo(170, 85); lx.stroke();
     lupa.style.left = (mouse[0] * esc < box.clientWidth / 2 ? box.clientWidth - 190 : 10) + 'px';
   }
-  if (!leitor) processar(vid, performance.now());          // navegador sem leitor de quadros: envia por aqui
+  if (!leitor) { talvezFoto(vid, performance.now()); processar(vid, performance.now()); }   // navegador sem leitor de quadros: envia por aqui
 }
 
 // ---------------- envio da linha de pixels ----------------
@@ -324,7 +362,7 @@ function iniciarLeitor() {
       while (leitor === meu) {
         const { value: q, done } = await meu.read().catch(() => ({ done: true }));
         if (done) break;
-        try { processar(q, performance.now()); } finally { q.close(); }
+        try { talvezFoto(q, performance.now()); processar(q, performance.now()); } finally { q.close(); }
       }
     })();
   } catch (e) { leitor = null; }

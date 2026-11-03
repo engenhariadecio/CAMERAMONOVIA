@@ -7,6 +7,7 @@ Variáveis no Railway: DATABASE_URL (o mesmo Postgres do Banho e Monovia), MONOV
 MONOVIA_CHAVE_API (opcional: para o Banho e Monovia ler /api/resumo sem login).
 """
 import os, io, json, time, struct, asyncio
+from collections import deque
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 import numpy as np
@@ -35,6 +36,12 @@ class Estado:
         s.cfg = banco.ler_config(); s.montar()
         s.conectado = False; s.ult_pacote = 0; s.pacotes = 0; s.fps = 0; s.off = None; s.t = 0
         s.ult_online = 0
+        s.ws = None                      # conexão do celular (para mandar ordens vindas do PC)
+        s.foto = None; s.foto_t = 0      # última foto que o celular mandou (para ver e calibrar no PC)
+        s.info = {}                      # câmeras do celular, resolução, foco travado...
+        s.ver_ate = 0                    # até quando alguém está olhando a câmera pelo PC
+        s.fita = deque(maxlen=330)       # últimas ~22 s da linha de pixels (para mostrar no PC)
+        s.ult_status = 0
     def montar(s):
         s.cont = Contador(s.cfg, modelo) if s.cfg.get('x') is not None else None
         if s.cont and s.cfg.get('fundo') is not None:
@@ -93,6 +100,9 @@ def painel(request: Request): return _pagina_logada(request, 'painel.html', '/')
 
 @app.get('/camera', response_class=HTMLResponse)
 def camera(request: Request): return _pagina_logada(request, 'camera.html', '/camera')
+
+@app.get('/calibrar', response_class=HTMLResponse)
+def calibrar(request: Request): return _pagina_logada(request, 'calibrar.html', '/calibrar')
 
 @app.get('/entrar', response_class=HTMLResponse)
 def entrar_pagina(): return pagina('entrar.html')
@@ -160,7 +170,65 @@ async def post_config(req: Request, u=Depends(logado)):
     elif E.cont: E.cont.cfg = E.cfg
     else: E.montar()
     banco.salvar_config(E.cfg)
-    return get_config(u)
+    c = get_config(u)
+    await mandar_celular({'tipo': 'cfg', 'cfg': c})      # calibrou pelo PC: o celular passa a usar na hora
+    return c
+
+async def mandar_celular(d):
+    if E.ws is None: return False
+    try: await E.ws.send_text(json.dumps(d)); return True
+    except Exception: return False
+
+async def status_celular(ws, forcar=False):
+    if not forcar and time.time() - E.ult_status < 1: return
+    E.ult_status = time.time()
+    r = resumo_dia(agora().strftime('%Y-%m-%d')); c = E.cont
+    await ws.send_text(json.dumps({'pecas': r['pecas'], 'ganchos': r['ganchos'], 'vel': velocidade_atual(),
+                                   'parada': bool(c and c.em_parada), 'fundo_ok': bool(c and c.fundo is not None),
+                                   'gravando_fundo': bool(c and c.coletando is not None), 'fps': round(E.fps, 1),
+                                   'mexeu': int(abs(c.desloc)) if c else 0, 'ver': time.time() < E.ver_ate}))
+
+# ---------------- ver e calibrar a câmera do celular pelo PC ----------------
+@app.get('/api/foto.jpg')
+async def api_foto(u=Depends(logado)):
+    comecou = time.time() >= E.ver_ate
+    E.ver_ate = time.time() + 8                          # avisa o celular para mandar fotos seguidas
+    if comecou and E.ws is not None:
+        try: await status_celular(E.ws, forcar=True)    # avisa já, sem esperar o celular mandar algo
+        except Exception: pass
+    if E.foto is None: raise HTTPException(404, 'o celular ainda não mandou imagem')
+    return Response(E.foto, media_type='image/jpeg',
+                    headers={'Cache-Control': 'no-store', 'X-Idade': f'{time.time() - E.foto_t:.1f}'})
+
+@app.get('/api/camera')
+def api_camera(u=Depends(logado)):
+    return dict(conectado=E.conectado and time.time() - max(E.ult_pacote, E.foto_t) < 10, fps=round(E.fps, 1),
+                foto_idade=round(time.time() - E.foto_t, 1) if E.foto is not None else None, info=E.info,
+                gravando_fundo=bool(E.cont and E.cont.coletando is not None), fundo_ok=bool(E.cont and E.cont.fundo is not None),
+                mexeu=int(abs(E.cont.desloc)) if E.cont else 0)
+
+@app.post('/api/camera/comando')
+async def api_camera_cmd(req: Request, u=Depends(logado)):
+    d = await req.json()
+    if d.get('acao') not in ('camera', 'res', 'trava', 'recarregar'): raise HTTPException(400, 'comando desconhecido')
+    if not await mandar_celular({'tipo': 'cmd', 'acao': d['acao'], 'valor': d.get('valor')}):
+        raise HTTPException(409, 'o celular não está conectado')
+    return {'ok': True}
+
+@app.post('/api/fundo')
+def api_fundo(u=Depends(logado)):
+    if not E.cont: raise HTTPException(409, 'calibre primeiro')
+    if not E.conectado: raise HTTPException(409, 'o celular não está conectado')
+    E.cont.iniciar_fundo(E.t); return {'ok': True}
+
+@app.get('/api/fita.png')
+def api_fita(u=Depends(logado)):
+    if not E.fita: raise HTTPException(404)
+    ya, ult = E.fita[-1][0], E.fita[-1][1]
+    cols = [c for y, c in E.fita if y == ya and len(c) == len(ult)]
+    img = np.stack(cols, axis=1)                         # linhas x tempo x 3
+    buf = io.BytesIO(); Image.fromarray(img).save(buf, 'PNG')
+    return Response(buf.getvalue(), media_type='image/png', headers={'Cache-Control': 'no-store', 'X-Ya': str(ya)})
 
 # ---------------- câmera (celular) ----------------
 @app.websocket('/ws/camera')
@@ -168,8 +236,9 @@ async def ws_camera(ws: WebSocket):
     if not (acesso.ler_sessao(ws.cookies.get(acesso.COOKIE)) or acesso.chave_ok(ws.query_params.get('chave'))):
         await ws.close(code=4001); return
     await ws.accept()
-    E.conectado = True; E.off = None; banco.evento(fmt(agora()), 'CAMERA_CONECTADA')
-    ult_envio = 0; cont_fps = 0; t_fps = time.time()
+    E.conectado = True; E.off = None; E.ws = ws; banco.evento(fmt(agora()), 'CAMERA_CONECTADA')
+    await ws.send_text(json.dumps({'tipo': 'cfg', 'cfg': get_config({})}))
+    cont_fps = 0; t_fps = time.time()
     try:
         while True:
             msg = await ws.receive()
@@ -177,12 +246,18 @@ async def ws_camera(ws: WebSocket):
             if msg.get('text'):
                 d = json.loads(msg['text'])
                 if d.get('tipo') == 'fundo' and E.cont: E.cont.iniciar_fundo(E.t)
+                if d.get('tipo') == 'info': E.info = {k: d.get(k) for k in ('w', 'h', 'cameras', 'camera', 'res', 'trava_pode', 'trava')}
                 continue
             b = msg.get('bytes')
-            if not b or len(b) < 16 or E.cont is None: continue
+            if b and b[:4] == b'FOTO':                    # foto da câmera para quem está calibrando pelo PC
+                E.foto = b[4:]; E.foto_t = time.time()
+                await status_celular(ws); continue
+            if not b or len(b) < 16 or E.cont is None:
+                await status_celular(ws); continue
             t_ms, mov, ya, n = struct.unpack('<dfHH', b[:16])
             if len(b) < 16 + n * 3: continue
             col = np.frombuffer(b[16:16 + n * 3], np.uint8).reshape(n, 3)
+            E.fita.append((ya, col.copy()))
             t = t_ms / 1000; E.t = t
             if E.off is None: E.off = time.time() - t
             E.cont.cfg['ya'] = ya
@@ -192,16 +267,11 @@ async def ws_camera(ws: WebSocket):
             if time.time() - t_fps >= 2: E.fps = cont_fps / (time.time() - t_fps); cont_fps = 0; t_fps = time.time()
             if time.time() - E.ult_online >= 60:          # "batimento": minutos com câmera funcionando
                 banco.evento(fmt(agora()), 'ONLINE'); E.ult_online = time.time()
-            if time.time() - ult_envio > 1:
-                ult_envio = time.time()
-                r = resumo_dia(agora().strftime('%Y-%m-%d'))
-                await ws.send_text(json.dumps({'pecas': r['pecas'], 'ganchos': r['ganchos'], 'vel': velocidade_atual(),
-                                               'parada': E.cont.em_parada, 'fundo_ok': E.cont.fundo is not None,
-                                               'gravando_fundo': E.cont.coletando is not None, 'fps': round(E.fps, 1),
-                                               'mexeu': int(abs(E.cont.desloc))}))
+            await status_celular(ws)
     except WebSocketDisconnect:
         pass
     finally:
+        if E.ws is ws: E.ws = None
         E.conectado = False
         if E.cont:
             if E.cont.em_parada and E.cont.parado_desde is not None:       # fecha a parada que estava aberta
